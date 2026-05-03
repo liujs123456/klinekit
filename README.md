@@ -2,7 +2,7 @@
 
 Java backtest engine for crypto trading strategies — spot DCA today, perpetual contracts (leverage / liquidation / funding rate) on the way.
 
-> **Status:** **M1 shipped** — core engine, spot DCA, CLI, 18 unit tests.
+> **Status:** **M1 shipped** — core engine, spot DCA, dip-ladder, CLI, 22 unit tests.
 > M2 (Spring Boot REST API + Postgres + Flyway) and M3 (perp support + Grid + DCA-Martingale) are queued.
 
 ## Why
@@ -10,6 +10,22 @@ Java backtest engine for crypto trading strategies — spot DCA today, perpetual
 - Most retail crypto traders run strategies live without ever back-testing them. klinekit makes it cheap to ask *"what would this have actually done?"* before wiring real capital.
 - The core ships as a **standalone Spring-free jar** so it can be embedded in scripts, services, or notebooks. The (forthcoming) REST API is a thin layer on top.
 - Designed in idiomatic **Java 21** — records, sealed types, switch expressions, pattern matching. No Lombok in core.
+
+## Headline result — does the dip-ladder actually beat DCA?
+
+The included [`spot.dip-ladder`](app/src/main/java/com/klinekit/strategy/spot/DipLadder.java) is a port of the live tier-ladder strategy from [`crypto-dca-monitor`](../btc-dca/crypto-dca-monitor) — buys $100/$200/$400/$800 at -10/-15/-22/-32% from a 30-day rolling high, with a 5% rebound re-arm.
+
+Backtest over **2025-05 → 2026-05** (BTC: \$95,922 → \$78,717, **buy-hold -17.9%**), $10,000 initial cash:
+
+| Strategy | Final equity | Total return | Max drawdown | Trades |
+|---|---:|---:|---:|---:|
+| Buy & hold | \$8,206 | **-17.94%** | n/a | 1 |
+| `spot.dca` (weekly $200) | \$8,397 | -16.03% | 35.04% | 49 |
+| **`spot.dip-ladder`** | **\$10,016** | **+0.16%** | **6.51%** | **11** |
+
+The dip-ladder preserved capital in a -18% year by sitting out non-dip days and only firing on real drawdowns. DCA's flat cadence forced it to keep buying through a downtrend.
+
+(Numbers are reproducible with `sample-data/btc-1y-daily.csv` and the commands in the [Quick start](#quick-start) below.)
 
 ## Quick start
 
@@ -54,7 +70,7 @@ metrics:
 ```
 klinekit backtest [OPTIONS]
 
-  -s, --strategy=<strategy>      dca (more in M3: grid, dca-martingale, ma-crossover)
+  -s, --strategy=<strategy>      dca | dip-ladder (more in M3: grid, dca-martingale, ma-crossover)
   -c, --csv=<csv>                Path to candle CSV
       --symbol=<symbol>          Fallback symbol if CSV omits it (default: BTCUSDT)
       --cash=<initialCash>       Initial USD cash (default: 10000)
@@ -62,6 +78,7 @@ klinekit backtest [OPTIONS]
       --slippage-bps=<bps>       Slippage in bps applied to mid (default: 5 = 0.05%)
       --interval=<intervalDays>  [dca] Days between buys (default: 7)
       --usd=<usdPerBuy>          [dca] USD per buy (default: 100)
+      --ref-lookback=<days>      [dip-ladder] Days of rolling high used as reference (default: 30)
 ```
 
 ## CSV format
@@ -80,7 +97,9 @@ Lines starting with `https://` (e.g., the cryptodatadownload.com header) are ski
 app/src/main/java/com/klinekit/
 ├── domain/         Candle, Order, Position, Trade, BacktestResult — records, BigDecimal money, Instant time
 ├── strategy/       Strategy interface + StrategyContext
-│   └── spot/Dca    Buy fixed USD every N days
+│   └── spot/
+│       ├── Dca         Buy fixed USD every N days
+│       └── DipLadder   4-tier dip ladder, fires once per tier with rebound re-arm
 ├── engine/         BacktestEngine, Portfolio, OrderRouter, SimulatedOrderRouter (fee + slippage)
 ├── data/           CandleProvider interface + CsvCandleProvider
 ├── metrics/        Total return, Sharpe (annualised from observed candle spacing), Max drawdown, Win rate

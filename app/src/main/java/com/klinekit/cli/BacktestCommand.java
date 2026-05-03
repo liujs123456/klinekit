@@ -6,6 +6,7 @@ import com.klinekit.domain.Candle;
 import com.klinekit.engine.BacktestEngine;
 import com.klinekit.strategy.Strategy;
 import com.klinekit.strategy.spot.Dca;
+import com.klinekit.strategy.spot.DipLadder;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -55,6 +56,10 @@ public final class BacktestCommand implements Callable<Integer> {
             description = "[dca] USD per buy (default: ${DEFAULT-VALUE}).")
     BigDecimal usdPerBuy;
 
+    @Option(names = {"--ref-lookback"}, defaultValue = "30",
+            description = "[dip-ladder] Days of rolling high used as reference price (default: ${DEFAULT-VALUE}).")
+    int refLookbackDays;
+
     @Override
     public Integer call() {
         List<Candle> candles = new CsvCandleProvider(csv, symbol).load();
@@ -79,6 +84,8 @@ public final class BacktestCommand implements Callable<Integer> {
     private Strategy buildStrategy(String csvSymbol) {
         return switch (strategy.toLowerCase(Locale.ROOT)) {
             case "dca", "spot.dca" -> new Dca(csvSymbol, usdPerBuy, intervalDays);
+            case "dip-ladder", "spot.dip-ladder" ->
+                    new DipLadder(csvSymbol, DipLadder.DEFAULT_TIERS, refLookbackDays);
             default -> null;
         };
     }
