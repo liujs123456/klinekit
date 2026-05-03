@@ -60,6 +60,21 @@ docker compose up -d
 open http://localhost:8080/swagger
 ```
 
+For zero-config local development (H2 in-memory DB instead of Postgres):
+
+```bash
+SPRING_PROFILES_ACTIVE=dev ./gradlew :api:bootRun
+```
+
+### Web dashboard (one command)
+
+```bash
+./scripts/dev.sh    # boots Spring API on :8080 (H2) + Next.js UI on :3000
+```
+
+Then open <http://localhost:3000> — upload a CSV, pick `dca` or `dip-ladder`,
+tune params, and overlay multiple runs on the equity curve to compare.
+
 Sample output:
 
 ```
@@ -123,7 +138,7 @@ Base path: `/api/v1`
 
 Live OpenAPI 3 spec at `/v3/api-docs`, Swagger UI at `/swagger`.
 
-## Architecture (multi-module Gradle)
+## Architecture (multi-module Gradle + Next.js)
 
 ```
 klinekit/
@@ -136,7 +151,8 @@ klinekit/
 │   └── metrics/    Total return, Sharpe, MaxDrawdown, WinRate
 ├── persistence/    JPA entities + repositories + Flyway migrations (PostgreSQL JSONB for config/metrics)
 ├── api/            Spring Boot 3 REST + OpenAPI/Swagger UI + DTOs + ExceptionHandler
-└── cli/            picocli entrypoint, packaged as a fat jar via Shadow
+├── cli/            picocli entrypoint, packaged as a fat jar via Shadow
+└── web/            Next.js 16 + React 19 + Tailwind v4 + Recharts dashboard
 ```
 
 Core has zero Spring/DB deps so it ships as a standalone jar. API + persistence are thin layers on top.

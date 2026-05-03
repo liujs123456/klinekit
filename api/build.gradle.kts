@@ -19,6 +19,7 @@ dependencies {
     implementation(rootProject.libs.flyway.core)
     runtimeOnly(rootProject.libs.flyway.postgres)
     runtimeOnly(rootProject.libs.postgresql)
+    runtimeOnly(rootProject.libs.h2)
     implementation(rootProject.libs.springdoc.openapi)
 
     testImplementation(rootProject.libs.spring.boot.starter.test)
