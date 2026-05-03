@@ -1,0 +1,10 @@
+[versions]
+junit-jupiter = "5.12.1"
+assertj = "3.27.3"
+picocli = "4.7.6"
+
+[libraries]
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.12.1" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
