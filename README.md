@@ -1,9 +1,9 @@
 # klinekit
 
-Java backtest engine for crypto trading strategies — spot DCA today, perpetual contracts (leverage / liquidation / funding rate) on the way.
+Java backtest engine for crypto trading strategies — spot DCA + dip-ladder today, perpetual contracts (leverage / liquidation / funding rate) on the way.
 
-> **Status:** **M1 shipped** — core engine, spot DCA, dip-ladder, CLI, 22 unit tests.
-> M2 (Spring Boot REST API + Postgres + Flyway) and M3 (perp support + Grid + DCA-Martingale) are queued.
+> **Status:** **M1 + M2 shipped** — core engine, spot DCA, dip-ladder, CLI, REST API + Postgres persistence, OpenAPI docs, 25 tests.
+> M3 (perp support + Grid + DCA-Martingale) and a React dashboard are queued.
 
 ## Why
 
@@ -13,7 +13,7 @@ Java backtest engine for crypto trading strategies — spot DCA today, perpetual
 
 ## Headline result — does the dip-ladder actually beat DCA?
 
-The included [`spot.dip-ladder`](app/src/main/java/com/klinekit/strategy/spot/DipLadder.java) is a port of the live tier-ladder strategy from [`crypto-dca-monitor`](../btc-dca/crypto-dca-monitor) — buys $100/$200/$400/$800 at -10/-15/-22/-32% from a 30-day rolling high, with a 5% rebound re-arm.
+The included [`spot.dip-ladder`](core/src/main/java/com/klinekit/strategy/spot/DipLadder.java) is a port of the live tier-ladder strategy from [`crypto-dca-monitor`](../btc-dca/crypto-dca-monitor) — buys $100/$200/$400/$800 at -10/-15/-22/-32% from a 30-day rolling high, with a 5% rebound re-arm.
 
 Backtest over **2025-05 → 2026-05** (BTC: \$95,922 → \$78,717, **buy-hold -17.9%**), $10,000 initial cash:
 
@@ -29,17 +29,35 @@ The dip-ladder preserved capital in a -18% year by sitting out non-dip days and 
 
 ## Quick start
 
+### CLI
+
 ```bash
-# Build the fat jar (requires JDK 21 — Gradle will auto-provision via foojay)
-./gradlew shadowJar
+# Build the fat jar (requires JDK 21 — Gradle auto-provisions via foojay)
+./gradlew :cli:shadowJar
 
 # Run a backtest
-java -jar app/build/libs/klinekit-0.1.0.jar backtest \
+java -jar cli/build/libs/klinekit-cli-0.2.0.jar backtest \
     --strategy=dca \
     --csv=sample-data/btc-toy-1d.csv \
     --interval=7 \
     --usd=100 \
     --cash=10000
+```
+
+### REST API + Postgres
+
+```bash
+# Start Postgres
+docker compose up -d
+
+# Boot the API (Spring Boot 3, Flyway runs migrations on first start)
+./gradlew :api:bootRun
+
+# Smoke-test (in another terminal)
+./scripts/smoke-api.sh
+
+# OpenAPI / Swagger UI
+open http://localhost:8080/swagger
 ```
 
 Sample output:
@@ -91,20 +109,37 @@ The provider sniffs columns case-insensitively and accepts:
 
 Lines starting with `https://` (e.g., the cryptodatadownload.com header) are skipped automatically.
 
-## Architecture
+## REST API
+
+Base path: `/api/v1`
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/backtest` | Submit a backtest (strategy + params + candle list inline). Returns the persisted summary with metrics. |
+| `GET`  | `/runs` | Last 50 runs (most recent first). |
+| `GET`  | `/runs/{id}` | Full summary for one run, including config + metrics. |
+| `GET`  | `/runs/{id}/trades` | Per-trade fills. |
+| `GET`  | `/runs/{id}/equity-curve` | One equity point per candle (timestamp + equity). Drives charts. |
+
+Live OpenAPI 3 spec at `/v3/api-docs`, Swagger UI at `/swagger`.
+
+## Architecture (multi-module Gradle)
 
 ```
-app/src/main/java/com/klinekit/
-├── domain/         Candle, Order, Position, Trade, BacktestResult — records, BigDecimal money, Instant time
-├── strategy/       Strategy interface + StrategyContext
-│   └── spot/
-│       ├── Dca         Buy fixed USD every N days
-│       └── DipLadder   4-tier dip ladder, fires once per tier with rebound re-arm
-├── engine/         BacktestEngine, Portfolio, OrderRouter, SimulatedOrderRouter (fee + slippage)
-├── data/           CandleProvider interface + CsvCandleProvider
-├── metrics/        Total return, Sharpe (annualised from observed candle spacing), Max drawdown, Win rate
-└── cli/            picocli entrypoint (Main + BacktestCommand)
+klinekit/
+├── core/           Pure Java engine (Spring-free, no DB) — domain records, strategies, BacktestEngine, metrics, CSV provider
+│   ├── domain/     Candle, Order, Position, Trade, BacktestResult — records, BigDecimal money, Instant time
+│   ├── strategy/   Strategy interface + StrategyContext
+│   │   └── spot/   Dca, DipLadder
+│   ├── engine/     BacktestEngine, Portfolio, OrderRouter, SimulatedOrderRouter
+│   ├── data/       CandleProvider, CsvCandleProvider
+│   └── metrics/    Total return, Sharpe, MaxDrawdown, WinRate
+├── persistence/    JPA entities + repositories + Flyway migrations (PostgreSQL JSONB for config/metrics)
+├── api/            Spring Boot 3 REST + OpenAPI/Swagger UI + DTOs + ExceptionHandler
+└── cli/            picocli entrypoint, packaged as a fat jar via Shadow
 ```
+
+Core has zero Spring/DB deps so it ships as a standalone jar. API + persistence are thin layers on top.
 
 The engine is rebuildable in 5 lines:
 
@@ -119,15 +154,19 @@ BacktestResult result = new BacktestEngine().run(strat, candles);
 | Milestone | Scope | Status |
 |---|---|---|
 | **M1** | Core engine + DCA spot + CLI + JUnit | ✅ shipped |
-| **M2** | Spring Boot REST API + PostgreSQL + Flyway + Testcontainers + OpenAPI | queued |
+| **M2** | Spring Boot REST API + PostgreSQL + Flyway + OpenAPI + Testcontainers/H2 ITs | ✅ shipped |
+| **Dashboard** | React/Next.js frontend — pick strategy, upload CSV, plot equity curve, compare runs | queued |
 | **M3** | Perp support (leverage / liquidation / funding rate) + Grid + DCA-Martingale + OKX history fetch | queued |
 
 ## Development
 
 ```bash
-./gradlew test           # run all unit tests (JUnit 5 + AssertJ)
-./gradlew run --args="backtest --strategy=dca --csv=$(pwd)/sample-data/btc-toy-1d.csv"
-./gradlew shadowJar      # produce fat jar at app/build/libs/klinekit-<ver>.jar
+./gradlew build               # full build: compile + test all modules
+./gradlew :core:test          # core unit tests only
+./gradlew :api:test           # REST + persistence integration tests (H2 in-memory)
+./gradlew :api:bootRun        # boot the REST server (defaults: postgres on localhost:5432)
+./gradlew :cli:shadowJar      # produce CLI fat jar at cli/build/libs/klinekit-cli-<ver>.jar
+./gradlew :cli:run --args="backtest --strategy=dca --csv=$(pwd)/sample-data/btc-toy-1d.csv"
 ```
 
 ## License

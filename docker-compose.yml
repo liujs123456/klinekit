@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: klinekit-pg
+    environment:
+      POSTGRES_DB: klinekit
+      POSTGRES_USER: klinekit
+      POSTGRES_PASSWORD: klinekit
+    ports:
+      - "5432:5432"
+    volumes:
+      - klinekit-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klinekit -d klinekit"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  klinekit-pgdata:
