@@ -2,8 +2,8 @@
 
 Java backtest engine for crypto trading strategies — spot DCA + dip-ladder today, perpetual contracts (leverage / liquidation / funding rate) on the way.
 
-> **Status:** **M1 + M2 shipped** — core engine, spot DCA, dip-ladder, CLI, REST API + Postgres persistence, OpenAPI docs, 25 tests.
-> M3 (perp support + Grid + DCA-Martingale) and a React dashboard are queued.
+> **Status:** **M1 + M2 + dashboard + OKX live data shipped** — core engine, spot DCA, dip-ladder, CLI, REST API + Postgres persistence, OpenAPI docs, Next.js dashboard, OKX history fetcher, cross-project hook into crypto-dca-monitor weekly summary. 30 tests.
+> M3 (perp support + Grid + DCA-Martingale) is queued.
 
 ## Why
 
@@ -35,12 +35,14 @@ The dip-ladder preserved capital in a -18% year by sitting out non-dip days and 
 # Build the fat jar (requires JDK 21 — Gradle auto-provisions via foojay)
 ./gradlew :cli:shadowJar
 
-# Run a backtest
+# Fetch real history from OKX
+java -jar cli/build/libs/klinekit-cli-0.2.0.jar fetch \
+    --symbol=BTC-USDT --bar=1D --count=365 --out=sample-data/btc-365d.csv
+
+# Run a backtest against the freshly fetched candles
 java -jar cli/build/libs/klinekit-cli-0.2.0.jar backtest \
-    --strategy=dca \
-    --csv=sample-data/btc-toy-1d.csv \
-    --interval=7 \
-    --usd=100 \
+    --strategy=dip-ladder \
+    --csv=sample-data/btc-365d.csv \
     --cash=10000
 ```
 
@@ -72,8 +74,10 @@ SPRING_PROFILES_ACTIVE=dev ./gradlew :api:bootRun
 ./scripts/dev.sh    # boots Spring API on :8080 (H2) + Next.js UI on :3000
 ```
 
-Then open <http://localhost:3000> — upload a CSV, pick `dca` or `dip-ladder`,
-tune params, and overlay multiple runs on the equity curve to compare.
+Then open <http://localhost:3000>. Pick **OKX history** (auto-fetches BTC/ETH
+candles by symbol + bar) or upload a CSV. Choose `dca` or `dip-ladder`, tune
+params, and overlay multiple runs on the equity curve to compare strategies
+side-by-side.
 
 Sample output:
 
@@ -130,13 +134,43 @@ Base path: `/api/v1`
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/backtest` | Submit a backtest (strategy + params + candle list inline). Returns the persisted summary with metrics. |
+| `POST` | `/backtest` | Submit a backtest. Two modes — inline `candles[]` OR `source: { provider: "okx", symbol, bar, count }`. Returns the persisted summary with metrics. |
 | `GET`  | `/runs` | Last 50 runs (most recent first). |
 | `GET`  | `/runs/{id}` | Full summary for one run, including config + metrics. |
 | `GET`  | `/runs/{id}/trades` | Per-trade fills. |
 | `GET`  | `/runs/{id}/equity-curve` | One equity point per candle (timestamp + equity). Drives charts. |
 
 Live OpenAPI 3 spec at `/v3/api-docs`, Swagger UI at `/swagger`.
+
+### Example — backtest the dip-ladder against fresh OKX history
+
+```bash
+curl -X POST http://localhost:8080/api/v1/backtest \
+  -H "content-type: application/json" \
+  -d '{
+    "strategy": "dip-ladder",
+    "symbol": "BTC-USDT",
+    "initialCash": "10000",
+    "feeBps": "10",
+    "slippageBps": "5",
+    "params": {"refLookbackDays": "30"},
+    "source": {"provider": "okx", "symbol": "BTC-USDT", "bar": "1D", "count": 365}
+  }'
+```
+
+## Cross-project hook — crypto-dca-monitor
+
+[`crypto-dca-monitor`](https://github.com/liujs123456/crypto-dca-monitor) now
+has an opt-in helper at `lib/klinekit.py` that POSTs to klinekit during the
+weekly summary cron. When `KLINEKIT_API=http://...:8080/api/v1` is set in the
+environment, the ntfy push gets one extra line:
+
+```
+📊 dip-ladder 365d: +1.25% / 2.68% DD / 7 trades over 365d
+```
+
+The helper uses Python stdlib only (`urllib`) and degrades silently if
+klinekit is unreachable, so it can't break the existing cron.
 
 ## Architecture (multi-module Gradle + Next.js)
 
@@ -171,8 +205,9 @@ BacktestResult result = new BacktestEngine().run(strat, candles);
 |---|---|---|
 | **M1** | Core engine + DCA spot + CLI + JUnit | ✅ shipped |
 | **M2** | Spring Boot REST API + PostgreSQL + Flyway + OpenAPI + Testcontainers/H2 ITs | ✅ shipped |
-| **Dashboard** | React/Next.js frontend — pick strategy, upload CSV, plot equity curve, compare runs | queued |
-| **M3** | Perp support (leverage / liquidation / funding rate) + Grid + DCA-Martingale + OKX history fetch | queued |
+| **Dashboard** | Next.js 16 + Tailwind v4 + Recharts — pick strategy, upload CSV or fetch from OKX, plot equity curve, compare runs | ✅ shipped |
+| **OKX live data + cross-project** | OkxCandleProvider, CLI `fetch` subcommand, REST `source: okx`, crypto-dca-monitor weekly hook | ✅ shipped |
+| **M3** | Perp support (leverage / liquidation / funding rate) + Grid + DCA-Martingale | queued |
 
 ## Development
 

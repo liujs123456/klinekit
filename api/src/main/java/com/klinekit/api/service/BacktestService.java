@@ -5,6 +5,7 @@ import com.klinekit.api.dto.BacktestRunSummaryDto;
 import com.klinekit.api.dto.CandleDto;
 import com.klinekit.api.dto.EquityPointDto;
 import com.klinekit.api.dto.TradeDto;
+import com.klinekit.data.OkxCandleProvider;
 import com.klinekit.domain.BacktestResult;
 import com.klinekit.domain.Candle;
 import com.klinekit.engine.BacktestEngine;
@@ -47,11 +48,20 @@ public class BacktestService {
 
     @Transactional
     public BacktestRunSummaryDto runAndPersist(BacktestRequest req) {
-        if (req.candles() == null || req.candles().isEmpty()) {
-            throw new IllegalArgumentException("candles must not be empty");
-        }
         String symbol = req.symbol() == null ? "UNKNOWN" : req.symbol();
-        List<Candle> candles = toCandles(req.candles(), symbol);
+        List<Candle> candles;
+        if (req.source() != null && req.source().provider() != null) {
+            candles = loadFromSource(req.source(), symbol);
+            if (candles.isEmpty()) {
+                throw new IllegalArgumentException("data source returned no candles");
+            }
+            symbol = candles.getFirst().symbol();
+        } else {
+            if (req.candles() == null || req.candles().isEmpty()) {
+                throw new IllegalArgumentException("candles must not be empty (or specify a 'source')");
+            }
+            candles = toCandles(req.candles(), symbol);
+        }
 
         Strategy strategy = strategyFactory.build(req.strategy(), symbol, req.params());
 
@@ -134,6 +144,22 @@ public class BacktestService {
         return equityRepo.findByRunIdOrderBySeqAsc(id).stream()
                 .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity()))
                 .toList();
+    }
+
+    private static List<Candle> loadFromSource(BacktestRequest.DataSourceSpec spec, String fallbackSymbol) {
+        String provider = spec.provider().toLowerCase();
+        return switch (provider) {
+            case "okx" -> {
+                String sym = spec.symbol() != null ? spec.symbol() : fallbackSymbol;
+                String bar = spec.bar() != null ? spec.bar() : "1D";
+                int count = spec.count() != null ? spec.count() : 365;
+                if (count <= 0 || count > 5000) {
+                    throw new IllegalArgumentException("source.count must be between 1 and 5000");
+                }
+                yield new OkxCandleProvider(sym, bar, count).load();
+            }
+            default -> throw new IllegalArgumentException("unknown data source: " + spec.provider());
+        };
     }
 
     private static List<Candle> toCandles(List<CandleDto> dtos, String symbol) {

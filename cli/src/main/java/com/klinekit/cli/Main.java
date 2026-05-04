@@ -6,9 +6,9 @@ import picocli.CommandLine.Command;
 @Command(
         name = "klinekit",
         mixinStandardHelpOptions = true,
-        version = "klinekit 0.1.0 (M1)",
+        version = "klinekit 0.2.0",
         description = "Java backtest engine for crypto strategies.",
-        subcommands = { BacktestCommand.class }
+        subcommands = { BacktestCommand.class, FetchCommand.class }
 )
 public final class Main implements Runnable {
 

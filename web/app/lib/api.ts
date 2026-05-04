@@ -10,6 +10,13 @@ export type CandleInput = {
   volume?: number;
 };
 
+export type DataSourceSpec = {
+  provider: "okx";
+  symbol?: string;
+  bar?: string;
+  count?: number;
+};
+
 export type BacktestRequest = {
   strategy: string;
   symbol: string;
@@ -17,7 +24,8 @@ export type BacktestRequest = {
   feeBps: string;
   slippageBps: string;
   params: Record<string, string | number>;
-  candles: CandleInput[];
+  candles?: CandleInput[];
+  source?: DataSourceSpec;
 };
 
 export type RunSummary = {
