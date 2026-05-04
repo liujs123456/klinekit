@@ -28,6 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @Service
 public class BacktestService {
@@ -121,6 +124,34 @@ public class BacktestService {
         equityRepo.saveAll(eqEntities);
 
         return toSummary(saved, result.trades().size(), result.equityCurve().size());
+    }
+
+    /**
+     * Run many backtest configurations in parallel using one virtual thread per
+     * job. Each job opens its own transaction so partial successes don't roll
+     * each other back. Returns the summaries in the input order.
+     */
+    public List<BacktestRunSummaryDto> runBatch(List<BacktestRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new IllegalArgumentException("requests must not be empty");
+        }
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<BacktestRunSummaryDto>> futures = new ArrayList<>(requests.size());
+            for (BacktestRequest req : requests) {
+                futures.add(executor.submit(() -> runAndPersist(req)));
+            }
+            List<BacktestRunSummaryDto> results = new ArrayList<>(requests.size());
+            for (Future<BacktestRunSummaryDto> f : futures) {
+                try {
+                    results.add(f.get());
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    if (cause instanceof RuntimeException re) throw re;
+                    throw new RuntimeException(cause);
+                }
+            }
+            return results;
+        }
     }
 
     @Transactional(readOnly = true)

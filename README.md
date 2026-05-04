@@ -1,13 +1,16 @@
 # klinekit
 
-Java backtest engine for crypto trading strategies — spot DCA + dip-ladder today, perpetual contracts (leverage / liquidation / funding rate) on the way.
+Java backtest engine for crypto trading strategies — spot DCA, dip-ladder, perp Grid, perp DCA-Martingale. Multi-module Gradle (core / persistence / api / cli) + Next.js dashboard.
 
-> **Status:** **M1 + M2 + M3 + dashboard + OKX live data shipped.** Core engine
-> (spot + perp), 4 strategies (DCA, dip-ladder, perp.Grid, perp.DCA-Martingale),
-> CLI with `fetch` / `backtest`, Spring Boot REST API + Postgres persistence,
-> OpenAPI docs, Next.js dashboard with strategy parameter forms and equity-curve
-> overlay, OKX history fetcher, cross-project hook into crypto-dca-monitor's
-> weekly ntfy push. 40 tests across modules.
+![klinekit dashboard with three overlaid backtest equity curves](docs/dashboard.png)
+
+> **Status:** **M1 + M2 + M3 + dashboard + OKX live data + risk controls + Dockerized stack shipped.**
+> Core engine (spot + perp), 4 strategies, CLI with `fetch` / `backtest`,
+> Spring Boot REST API + Postgres persistence with Flyway, OpenAPI docs,
+> Next.js dashboard with strategy parameter forms and equity-curve overlay
+> (with liquidation markers), OKX history candles + funding rates, parallel
+> batch backtests on Java 21 virtual threads, full Docker stack, cross-project
+> hook into crypto-dca-monitor's morning + weekly ntfy pushes. 48 tests across modules.
 
 ## Why
 
@@ -83,6 +86,14 @@ candles by symbol + bar) or upload a CSV. Choose `dca` or `dip-ladder`, tune
 params, and overlay multiple runs on the equity curve to compare strategies
 side-by-side.
 
+### Full Docker stack (Postgres + API + dashboard)
+
+```bash
+docker compose up --build           # postgres :5432, api :8080, web :3000
+```
+
+For deploying to Fly.io or Railway with public URLs, see [DEPLOY.md](DEPLOY.md).
+
 Sample output:
 
 ```
@@ -139,9 +150,10 @@ Base path: `/api/v1`
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/backtest` | Submit a backtest. Two modes — inline `candles[]` OR `source: { provider: "okx", symbol, bar, count }`. Returns the persisted summary with metrics. |
+| `POST` | `/backtest/batch` | Run a list of backtests in parallel using one Java 21 virtual thread per request. Useful for parameter sweeps. |
 | `GET`  | `/runs` | Last 50 runs (most recent first). |
 | `GET`  | `/runs/{id}` | Full summary for one run, including config + metrics. |
-| `GET`  | `/runs/{id}/trades` | Per-trade fills. |
+| `GET`  | `/runs/{id}/trades` | Per-trade fills. Liquidation events appear with an `LIQ-` prefixed `orderId`. |
 | `GET`  | `/runs/{id}/equity-curve` | One equity point per candle (timestamp + equity). Drives charts. |
 
 Live OpenAPI 3 spec at `/v3/api-docs`, Swagger UI at `/swagger`.

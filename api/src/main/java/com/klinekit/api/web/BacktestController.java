@@ -35,6 +35,15 @@ public class BacktestController {
         return ResponseEntity.created(URI.create("/api/v1/runs/" + summary.id())).body(summary);
     }
 
+    /**
+     * Run a list of backtests in parallel using one virtual thread per request.
+     * Useful for parameter sweeps from the dashboard or scripts.
+     */
+    @PostMapping("/backtest/batch")
+    public ResponseEntity<List<BacktestRunSummaryDto>> runBatch(@RequestBody List<BacktestRequest> reqs) {
+        return ResponseEntity.ok(service.runBatch(reqs));
+    }
+
     @GetMapping("/runs")
     public List<BacktestRunSummaryDto> list() {
         return service.listRuns();
