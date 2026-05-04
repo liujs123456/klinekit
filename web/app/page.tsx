@@ -1,14 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api, type BacktestRequest, type CandleInput, type EquityPoint, type RunSummary } from "./lib/api";
+import { api, type BacktestRequest, type CandleInput, type EquityPoint, type RunSummary, type Trade } from "./lib/api";
 import { BacktestForm } from "./components/BacktestForm";
 import { EquityChart } from "./components/EquityChart";
 import { MetricsPanel } from "./components/MetricsPanel";
 
 const COLORS = ["#34d399", "#60a5fa", "#f472b6", "#facc15", "#a78bfa"];
 
-type RunWithCurve = { run: RunSummary; curve: EquityPoint[]; color: string };
+type RunWithCurve = {
+  run: RunSummary;
+  curve: EquityPoint[];
+  trades: Trade[];
+  color: string;
+};
 
 export default function Home() {
   const [candles, setCandles] = useState<CandleInput[] | null>(null);
@@ -26,10 +31,13 @@ export default function Home() {
     setError(null);
     try {
       const summary = await api.runBacktest(req);
-      const curve = await api.getEquityCurve(summary.id);
+      const [curve, trades] = await Promise.all([
+        api.getEquityCurve(summary.id),
+        api.getTrades(summary.id),
+      ]);
       setResults((rs) => [
         ...rs,
-        { run: summary, curve, color: COLORS[rs.length % COLORS.length] },
+        { run: summary, curve, trades, color: COLORS[rs.length % COLORS.length] },
       ]);
       const refreshed = await api.listRuns();
       setRecent(refreshed);
@@ -38,6 +46,14 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function liquidationDots(curve: EquityPoint[], trades: Trade[]) {
+    const eqByTs = new Map(curve.map((p) => [p.timestamp, Number(p.equity)]));
+    return trades
+      .filter((t) => t.orderId.startsWith("LIQ-"))
+      .map((t) => ({ timestamp: t.executedAt, equity: eqByTs.get(t.executedAt) ?? 0 }))
+      .filter((d) => d.equity > 0);
   }
 
   const buyHoldPct = useMemo(() => {
@@ -128,8 +144,14 @@ export default function Home() {
                 label: `${r.run.strategy}`,
                 color: r.color,
                 points: r.curve,
+                liquidations: liquidationDots(r.curve, r.trades),
               }))}
             />
+            {results.some((r) => r.trades.some((t) => t.orderId.startsWith("LIQ-"))) && (
+              <p className="mt-2 text-xs text-rose-400/80">
+                ● red dots mark liquidation events (perp position auto-closed at liq price)
+              </p>
+            )}
           </div>
 
           {results.length > 0 && (

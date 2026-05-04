@@ -4,6 +4,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,7 +13,13 @@ import {
 } from "recharts";
 import type { EquityPoint } from "../lib/api";
 
-type Series = { id: string; label: string; color: string; points: EquityPoint[] };
+type Series = {
+  id: string;
+  label: string;
+  color: string;
+  points: EquityPoint[];
+  liquidations?: { timestamp: string; equity: number }[];
+};
 
 type Props = {
   series: Series[];
@@ -63,6 +70,19 @@ export function EquityChart({ series }: Props) {
               isAnimationActive={false}
             />
           ))}
+          {series.flatMap((s) =>
+            (s.liquidations ?? []).map((liq, i) => (
+              <ReferenceDot
+                key={`${s.id}-liq-${i}`}
+                x={liq.timestamp}
+                y={liq.equity}
+                r={5}
+                fill="#f43f5e"
+                stroke="#fff"
+                strokeWidth={1}
+              />
+            )),
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

@@ -41,7 +41,9 @@ public class StrategyFactory {
                     bd(p, "pullbackPct", "0.02"),
                     bd(p, "takeProfitPct", "0.01"),
                     bd(p, "multiplier", "2"),
-                    intOf(p, "maxOrders", 6));
+                    intOf(p, "maxOrders", 6),
+                    bd(p, "stopLossPct", "0"),
+                    bd(p, "trailingStopPct", "0"));
             default -> throw new IllegalArgumentException("Unknown strategy: " + name);
         };
     }

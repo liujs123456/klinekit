@@ -61,4 +61,24 @@ public final class SimulatedOrderRouter implements OrderRouter {
     public List<Trade> trades() {
         return List.copyOf(trades);
     }
+
+    /**
+     * Record a synthetic liquidation event in the trade log so it can be rendered
+     * downstream (dashboard, persistence, metrics) without a real order being placed.
+     * The orderId is prefixed with {@code LIQ-} so consumers can filter / mark them.
+     */
+    void recordLiquidation(com.klinekit.domain.Position position, Candle candle, BigDecimal liquidationPrice) {
+        com.klinekit.domain.Side side = position.direction() == com.klinekit.domain.Direction.LONG
+                ? com.klinekit.domain.Side.SELL
+                : com.klinekit.domain.Side.BUY;
+        Trade liq = new Trade(
+                "LIQ-" + position.symbol() + "-" + candle.timestamp().toEpochMilli(),
+                position.symbol(),
+                side,
+                position.quantity(),
+                liquidationPrice,
+                BigDecimal.ZERO,
+                candle.timestamp());
+        trades.add(liq);
+    }
 }

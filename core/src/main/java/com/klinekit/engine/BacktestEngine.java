@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 
 public final class BacktestEngine {
 
@@ -20,14 +21,19 @@ public final class BacktestEngine {
             BigDecimal initialCash,
             BigDecimal feeBps,
             BigDecimal slippageBps,
-            BigDecimal fundingRatePer8h
+            BigDecimal fundingRatePer8h,
+            NavigableMap<Instant, BigDecimal> fundingRateHistory
     ) {
         public Config(BigDecimal initialCash, BigDecimal feeBps, BigDecimal slippageBps) {
-            this(initialCash, feeBps, slippageBps, BigDecimal.ZERO);
+            this(initialCash, feeBps, slippageBps, BigDecimal.ZERO, null);
+        }
+
+        public Config(BigDecimal initialCash, BigDecimal feeBps, BigDecimal slippageBps, BigDecimal fundingRatePer8h) {
+            this(initialCash, feeBps, slippageBps, fundingRatePer8h, null);
         }
 
         public static Config defaults() {
-            return new Config(new BigDecimal("10000"), new BigDecimal("10"), new BigDecimal("5"), BigDecimal.ZERO);
+            return new Config(new BigDecimal("10000"), new BigDecimal("10"), new BigDecimal("5"), BigDecimal.ZERO, null);
         }
     }
 
@@ -48,7 +54,7 @@ public final class BacktestEngine {
 
         Portfolio portfolio = new Portfolio(config.initialCash());
         SimulatedOrderRouter router = new SimulatedOrderRouter(portfolio, config.feeBps(), config.slippageBps());
-        FundingRateSim funding = new FundingRateSim(config.fundingRatePer8h());
+        FundingRateSim funding = new FundingRateSim(config.fundingRatePer8h(), config.fundingRateHistory());
 
         Candle first = candles.getFirst();
         router.onCandle(first);
@@ -67,6 +73,8 @@ public final class BacktestEngine {
             // Liquidation pass — close any perp position whose liq price was crossed this candle
             for (Position p : List.copyOf(portfolio.positions().values())) {
                 if (LiquidationCalculator.wasLiquidated(p, c.high(), c.low())) {
+                    BigDecimal liqPrice = LiquidationCalculator.liquidationPrice(p);
+                    router.recordLiquidation(p, c, liqPrice);
                     portfolio.applyLiquidation(p.symbol());
                 }
             }

@@ -6,6 +6,7 @@ import com.klinekit.api.dto.CandleDto;
 import com.klinekit.api.dto.EquityPointDto;
 import com.klinekit.api.dto.TradeDto;
 import com.klinekit.data.OkxCandleProvider;
+import com.klinekit.data.OkxFundingRateProvider;
 import com.klinekit.domain.BacktestResult;
 import com.klinekit.domain.Candle;
 import com.klinekit.engine.BacktestEngine;
@@ -20,10 +21,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.UUID;
 
 @Service
@@ -66,11 +69,13 @@ public class BacktestService {
         Strategy strategy = strategyFactory.build(req.strategy(), symbol, req.params());
 
         BigDecimal funding = extractFundingRate(req.params());
+        NavigableMap<Instant, BigDecimal> fundingHistory = maybeFetchFundingHistory(req.params(), symbol);
         BacktestEngine.Config cfg = new BacktestEngine.Config(
                 req.initialCash() == null ? new BigDecimal("10000") : req.initialCash(),
                 req.feeBps() == null ? new BigDecimal("10") : req.feeBps(),
                 req.slippageBps() == null ? new BigDecimal("5") : req.slippageBps(),
-                funding
+                funding,
+                fundingHistory
         );
         BacktestResult result = new BacktestEngine(cfg).run(strategy, candles);
 
@@ -146,6 +151,25 @@ public class BacktestService {
         return equityRepo.findByRunIdOrderBySeqAsc(id).stream()
                 .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity()))
                 .toList();
+    }
+
+    private static NavigableMap<Instant, BigDecimal> maybeFetchFundingHistory(
+            Map<String, Object> params, String symbol) {
+        if (params == null) return null;
+        Object flag = params.get("useLiveFundingHistory");
+        if (flag == null) return null;
+        boolean enabled = Boolean.parseBoolean(flag.toString());
+        if (!enabled) return null;
+        try {
+            int count = 200;
+            Object countRaw = params.get("fundingHistoryCount");
+            if (countRaw != null) count = Integer.parseInt(countRaw.toString());
+            return new OkxFundingRateProvider(symbol, count).load();
+        } catch (RuntimeException e) {
+            // Don't fail the whole backtest just because OKX funding fetch failed —
+            // fall back to fixed rate.
+            return null;
+        }
     }
 
     private static BigDecimal extractFundingRate(Map<String, Object> params) {
