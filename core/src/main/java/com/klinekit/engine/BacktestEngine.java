@@ -3,6 +3,7 @@ package com.klinekit.engine;
 import com.klinekit.domain.BacktestResult;
 import com.klinekit.domain.Candle;
 import com.klinekit.domain.EquityPoint;
+import com.klinekit.domain.Position;
 import com.klinekit.metrics.Metrics;
 import com.klinekit.strategy.Strategy;
 import com.klinekit.strategy.StrategyContext;
@@ -18,10 +19,15 @@ public final class BacktestEngine {
     public record Config(
             BigDecimal initialCash,
             BigDecimal feeBps,
-            BigDecimal slippageBps
+            BigDecimal slippageBps,
+            BigDecimal fundingRatePer8h
     ) {
+        public Config(BigDecimal initialCash, BigDecimal feeBps, BigDecimal slippageBps) {
+            this(initialCash, feeBps, slippageBps, BigDecimal.ZERO);
+        }
+
         public static Config defaults() {
-            return new Config(new BigDecimal("10000"), new BigDecimal("10"), new BigDecimal("5"));
+            return new Config(new BigDecimal("10000"), new BigDecimal("10"), new BigDecimal("5"), BigDecimal.ZERO);
         }
     }
 
@@ -42,11 +48,12 @@ public final class BacktestEngine {
 
         Portfolio portfolio = new Portfolio(config.initialCash());
         SimulatedOrderRouter router = new SimulatedOrderRouter(portfolio, config.feeBps(), config.slippageBps());
+        FundingRateSim funding = new FundingRateSim(config.fundingRatePer8h());
 
         Candle first = candles.getFirst();
         router.onCandle(first);
-        StrategyContext startCtx = new StrategyContext(first, portfolio, router);
-        strategy.onStart(startCtx);
+        funding.onCandle(first);
+        strategy.onStart(new StrategyContext(first, portfolio, router));
 
         List<EquityPoint> curve = new ArrayList<>(candles.size());
         Instant start = first.timestamp();
@@ -55,6 +62,24 @@ public final class BacktestEngine {
 
         for (Candle c : candles) {
             router.onCandle(c);
+            funding.onCandle(c);
+
+            // Liquidation pass — close any perp position whose liq price was crossed this candle
+            for (Position p : List.copyOf(portfolio.positions().values())) {
+                if (LiquidationCalculator.wasLiquidated(p, c.high(), c.low())) {
+                    portfolio.applyLiquidation(p.symbol());
+                }
+            }
+
+            // Funding accrual pass — for each open perp position, debit/credit cash
+            for (Position p : portfolio.positions().values()) {
+                BigDecimal mark = p.symbol().equals(c.symbol()) ? c.close() : null;
+                if (mark != null && p.isPerp()) {
+                    BigDecimal payment = funding.accrue(p, mark, c.timestamp());
+                    portfolio.applyFundingPayment(payment);
+                }
+            }
+
             strategy.onCandle(new StrategyContext(c, portfolio, router));
             BigDecimal eq = portfolio.equity(c.symbol(), c.close());
             curve.add(new EquityPoint(c.timestamp(), eq));
@@ -81,5 +106,4 @@ public final class BacktestEngine {
                 metrics
         );
     }
-
 }

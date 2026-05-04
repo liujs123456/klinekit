@@ -4,10 +4,6 @@ import { useState } from "react";
 import type { BacktestRequest, CandleInput } from "../lib/api";
 import { parseCsvCandles } from "../lib/csv";
 
-type DataSource =
-  | { kind: "csv"; candles: CandleInput[] | null; filename: string }
-  | { kind: "okx"; bar: string; count: number };
-
 type Props = {
   candles: CandleInput[] | null;
   onCandles: (cs: CandleInput[], filename: string) => void;
@@ -16,8 +12,10 @@ type Props = {
 };
 
 const STRATEGIES = [
-  { id: "dca", label: "DCA — buy fixed USD every N days" },
-  { id: "dip-ladder", label: "Dip ladder — 4 tiers from rolling high" },
+  { id: "dca", label: "Spot · DCA — buy fixed USD every N days" },
+  { id: "dip-ladder", label: "Spot · Dip ladder — 4 tiers from rolling high" },
+  { id: "perp.grid", label: "Perp · Grid — bidirectional level-based DCA + TP" },
+  { id: "perp.dca-martingale", label: "Perp · DCA-Martingale — double-down + take profit" },
 ];
 
 export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
@@ -30,11 +28,33 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
   const [initialCash, setInitialCash] = useState("10000");
   const [feeBps, setFeeBps] = useState("10");
   const [slippageBps, setSlippageBps] = useState("5");
+
+  // spot.dca
   const [usdPerBuy, setUsdPerBuy] = useState("100");
   const [intervalDays, setIntervalDays] = useState("7");
+  // spot.dip-ladder
   const [refLookback, setRefLookback] = useState("30");
+  // perp.grid
+  const [gridLower, setGridLower] = useState("70000");
+  const [gridUpper, setGridUpper] = useState("100000");
+  const [gridLevels, setGridLevels] = useState("8");
+  const [gridLeverage, setGridLeverage] = useState("5");
+  const [gridQty, setGridQty] = useState("0.01");
+  // perp.dca-martingale
+  const [dcamDirection, setDcamDirection] = useState<"LONG" | "SHORT">("LONG");
+  const [dcamLeverage, setDcamLeverage] = useState("5");
+  const [dcamBaseQty, setDcamBaseQty] = useState("0.005");
+  const [dcamPullback, setDcamPullback] = useState("0.02");
+  const [dcamTakeProfit, setDcamTakeProfit] = useState("0.01");
+  const [dcamMultiplier, setDcamMultiplier] = useState("2");
+  const [dcamMaxOrders, setDcamMaxOrders] = useState("6");
+  // common: funding rate
+  const [fundingRate, setFundingRate] = useState("0.0001");
+
   const [filename, setFilename] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  const isPerp = strategy.startsWith("perp.");
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     setError(null);
@@ -50,13 +70,40 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
     }
   }
 
+  function buildParams(): Record<string, string | number> {
+    switch (strategy) {
+      case "dca":
+        return { usdPerBuy, intervalDays: Number(intervalDays) };
+      case "dip-ladder":
+        return { refLookbackDays: Number(refLookback) };
+      case "perp.grid":
+        return {
+          lowerBound: gridLower,
+          upperBound: gridUpper,
+          levels: Number(gridLevels),
+          leverage: gridLeverage,
+          qtyPerLevel: gridQty,
+          fundingRatePer8h: fundingRate,
+        };
+      case "perp.dca-martingale":
+        return {
+          direction: dcamDirection,
+          leverage: dcamLeverage,
+          baseQty: dcamBaseQty,
+          pullbackPct: dcamPullback,
+          takeProfitPct: dcamTakeProfit,
+          multiplier: dcamMultiplier,
+          maxOrders: Number(dcamMaxOrders),
+          fundingRatePer8h: fundingRate,
+        };
+      default:
+        return {};
+    }
+  }
+
   async function handleSubmit() {
     setError(null);
-    const params: Record<string, string | number> =
-      strategy === "dca"
-        ? { usdPerBuy, intervalDays: Number(intervalDays) }
-        : { refLookbackDays: Number(refLookback) };
-
+    const params = buildParams();
     const base = { strategy, symbol, initialCash, feeBps, slippageBps, params };
     let req: BacktestRequest;
     if (sourceMode === "okx") {
@@ -145,15 +192,70 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
         <Field label="Slippage bps" value={slippageBps} onChange={setSlippageBps} />
       </div>
 
-      {strategy === "dca" ? (
+      {strategy === "dca" && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="USD per buy" value={usdPerBuy} onChange={setUsdPerBuy} />
           <Field label="Interval (days)" value={intervalDays} onChange={setIntervalDays} />
         </div>
-      ) : (
+      )}
+
+      {strategy === "dip-ladder" && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ref lookback (days)" value={refLookback} onChange={setRefLookback} />
         </div>
+      )}
+
+      {strategy === "perp.grid" && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Lower bound $" value={gridLower} onChange={setGridLower} />
+            <Field label="Upper bound $" value={gridUpper} onChange={setGridUpper} />
+            <Field label="Levels" value={gridLevels} onChange={setGridLevels} />
+            <Field label="Leverage" value={gridLeverage} onChange={setGridLeverage} />
+            <Field label="Qty per level" value={gridQty} onChange={setGridQty} />
+            <Field label="Funding/8h" value={fundingRate} onChange={setFundingRate} />
+          </div>
+        </>
+      )}
+
+      {strategy === "perp.dca-martingale" && (
+        <>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">Direction</label>
+            <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-900 rounded-md border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setDcamDirection("LONG")}
+                className={`text-xs py-1.5 rounded transition ${dcamDirection === "LONG" ? "bg-emerald-500/20 text-emerald-300" : "text-zinc-500 hover:text-zinc-300"}`}
+              >
+                LONG
+              </button>
+              <button
+                type="button"
+                onClick={() => setDcamDirection("SHORT")}
+                className={`text-xs py-1.5 rounded transition ${dcamDirection === "SHORT" ? "bg-rose-500/20 text-rose-300" : "text-zinc-500 hover:text-zinc-300"}`}
+              >
+                SHORT
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Leverage" value={dcamLeverage} onChange={setDcamLeverage} />
+            <Field label="Base qty" value={dcamBaseQty} onChange={setDcamBaseQty} />
+            <Field label="Pullback (e.g. 0.02 = 2%)" value={dcamPullback} onChange={setDcamPullback} />
+            <Field label="Take profit (0.01 = 1%)" value={dcamTakeProfit} onChange={setDcamTakeProfit} />
+            <Field label="Multiplier" value={dcamMultiplier} onChange={setDcamMultiplier} />
+            <Field label="Max orders" value={dcamMaxOrders} onChange={setDcamMaxOrders} />
+            <Field label="Funding/8h" value={fundingRate} onChange={setFundingRate} />
+          </div>
+        </>
+      )}
+
+      {isPerp && (
+        <p className="text-xs text-amber-400/80 leading-relaxed">
+          ⚠️ Perp orders use isolated-margin liquidation at <code className="font-mono">entry × (1 - 1/L + 0.5%)</code> for longs.
+          Force-close on liq is automatic.
+        </p>
       )}
 
       {error && <p className="text-rose-400 text-xs">{error}</p>}

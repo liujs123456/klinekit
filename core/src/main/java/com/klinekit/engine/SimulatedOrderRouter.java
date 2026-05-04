@@ -33,7 +33,7 @@ public final class SimulatedOrderRouter implements OrderRouter {
             throw new IllegalStateException("no current candle — engine not started");
         }
         if (order.type() != OrderType.MARKET) {
-            throw new UnsupportedOperationException("M1 only supports MARKET orders");
+            throw new UnsupportedOperationException("only MARKET orders are supported");
         }
 
         BigDecimal mid = currentCandle.close();
@@ -45,16 +45,15 @@ public final class SimulatedOrderRouter implements OrderRouter {
         BigDecimal notional = fillPrice.multiply(order.quantity());
         BigDecimal fee = notional.multiply(feeBps.movePointLeft(4)).abs();
 
-        Trade trade = new Trade(
-                order.id(),
-                order.symbol(),
-                order.side(),
-                order.quantity(),
-                fillPrice,
-                fee,
-                currentCandle.timestamp()
-        );
-        portfolio.apply(trade);
+        Trade trade;
+        if (order.isPerp()) {
+            trade = portfolio.applyPerpFill(order, fillPrice, fee, currentCandle.timestamp());
+        } else {
+            trade = new Trade(
+                    order.id(), order.symbol(), order.side(), order.quantity(),
+                    fillPrice, fee, currentCandle.timestamp());
+            portfolio.apply(trade);
+        }
         trades.add(trade);
         return trade;
     }

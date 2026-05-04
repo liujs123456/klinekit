@@ -1,6 +1,9 @@
 package com.klinekit.api.service;
 
+import com.klinekit.domain.Direction;
 import com.klinekit.strategy.Strategy;
+import com.klinekit.strategy.perp.DcaMartingale;
+import com.klinekit.strategy.perp.Grid;
 import com.klinekit.strategy.spot.Dca;
 import com.klinekit.strategy.spot.DipLadder;
 import org.springframework.stereotype.Component;
@@ -23,8 +26,29 @@ public class StrategyFactory {
                     symbol,
                     DipLadder.DEFAULT_TIERS,
                     intOf(p, "refLookbackDays", 30));
+            case "grid", "perp.grid" -> new Grid(
+                    symbol,
+                    bd(p, "lowerBound", "70000"),
+                    bd(p, "upperBound", "100000"),
+                    intOf(p, "levels", 8),
+                    bd(p, "leverage", "5"),
+                    bd(p, "qtyPerLevel", "0.01"));
+            case "dca-martingale", "perp.dca-martingale" -> new DcaMartingale(
+                    symbol,
+                    Direction.valueOf(strOf(p, "direction", "LONG").toUpperCase(Locale.ROOT)),
+                    bd(p, "leverage", "5"),
+                    bd(p, "baseQty", "0.01"),
+                    bd(p, "pullbackPct", "0.02"),
+                    bd(p, "takeProfitPct", "0.01"),
+                    bd(p, "multiplier", "2"),
+                    intOf(p, "maxOrders", 6));
             default -> throw new IllegalArgumentException("Unknown strategy: " + name);
         };
+    }
+
+    private static String strOf(Map<String, Object> p, String k, String defaultValue) {
+        Object v = p.get(k);
+        return v == null ? defaultValue : v.toString();
     }
 
     private static BigDecimal bd(Map<String, Object> p, String k, String defaultValue) {

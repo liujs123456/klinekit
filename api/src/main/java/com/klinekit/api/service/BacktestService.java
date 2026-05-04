@@ -65,10 +65,12 @@ public class BacktestService {
 
         Strategy strategy = strategyFactory.build(req.strategy(), symbol, req.params());
 
+        BigDecimal funding = extractFundingRate(req.params());
         BacktestEngine.Config cfg = new BacktestEngine.Config(
                 req.initialCash() == null ? new BigDecimal("10000") : req.initialCash(),
                 req.feeBps() == null ? new BigDecimal("10") : req.feeBps(),
-                req.slippageBps() == null ? new BigDecimal("5") : req.slippageBps()
+                req.slippageBps() == null ? new BigDecimal("5") : req.slippageBps(),
+                funding
         );
         BacktestResult result = new BacktestEngine(cfg).run(strategy, candles);
 
@@ -144,6 +146,17 @@ public class BacktestService {
         return equityRepo.findByRunIdOrderBySeqAsc(id).stream()
                 .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity()))
                 .toList();
+    }
+
+    private static BigDecimal extractFundingRate(Map<String, Object> params) {
+        if (params == null) return BigDecimal.ZERO;
+        Object raw = params.get("fundingRatePer8h");
+        if (raw == null) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(raw.toString());
+        } catch (NumberFormatException ignored) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private static List<Candle> loadFromSource(BacktestRequest.DataSourceSpec spec, String fallbackSymbol) {

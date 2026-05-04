@@ -2,8 +2,12 @@
 
 Java backtest engine for crypto trading strategies — spot DCA + dip-ladder today, perpetual contracts (leverage / liquidation / funding rate) on the way.
 
-> **Status:** **M1 + M2 + dashboard + OKX live data shipped** — core engine, spot DCA, dip-ladder, CLI, REST API + Postgres persistence, OpenAPI docs, Next.js dashboard, OKX history fetcher, cross-project hook into crypto-dca-monitor weekly summary. 30 tests.
-> M3 (perp support + Grid + DCA-Martingale) is queued.
+> **Status:** **M1 + M2 + M3 + dashboard + OKX live data shipped.** Core engine
+> (spot + perp), 4 strategies (DCA, dip-ladder, perp.Grid, perp.DCA-Martingale),
+> CLI with `fetch` / `backtest`, Spring Boot REST API + Postgres persistence,
+> OpenAPI docs, Next.js dashboard with strategy parameter forms and equity-curve
+> overlay, OKX history fetcher, cross-project hook into crypto-dca-monitor's
+> weekly ntfy push. 40 tests across modules.
 
 ## Why
 
@@ -179,9 +183,10 @@ klinekit/
 ├── core/           Pure Java engine (Spring-free, no DB) — domain records, strategies, BacktestEngine, metrics, CSV provider
 │   ├── domain/     Candle, Order, Position, Trade, BacktestResult — records, BigDecimal money, Instant time
 │   ├── strategy/   Strategy interface + StrategyContext
-│   │   └── spot/   Dca, DipLadder
-│   ├── engine/     BacktestEngine, Portfolio, OrderRouter, SimulatedOrderRouter
-│   ├── data/       CandleProvider, CsvCandleProvider
+│   │   ├── spot/   Dca, DipLadder
+│   │   └── perp/   Grid, DcaMartingale
+│   ├── engine/     BacktestEngine, Portfolio, OrderRouter, SimulatedOrderRouter, LiquidationCalculator, FundingRateSim
+│   ├── data/       CandleProvider, CsvCandleProvider, OkxCandleProvider
 │   └── metrics/    Total return, Sharpe, MaxDrawdown, WinRate
 ├── persistence/    JPA entities + repositories + Flyway migrations (PostgreSQL JSONB for config/metrics)
 ├── api/            Spring Boot 3 REST + OpenAPI/Swagger UI + DTOs + ExceptionHandler
@@ -207,7 +212,7 @@ BacktestResult result = new BacktestEngine().run(strat, candles);
 | **M2** | Spring Boot REST API + PostgreSQL + Flyway + OpenAPI + Testcontainers/H2 ITs | ✅ shipped |
 | **Dashboard** | Next.js 16 + Tailwind v4 + Recharts — pick strategy, upload CSV or fetch from OKX, plot equity curve, compare runs | ✅ shipped |
 | **OKX live data + cross-project** | OkxCandleProvider, CLI `fetch` subcommand, REST `source: okx`, crypto-dca-monitor weekly hook | ✅ shipped |
-| **M3** | Perp support (leverage / liquidation / funding rate) + Grid + DCA-Martingale | queued |
+| **M3** | Perp domain (Direction + leverage), LiquidationCalculator (isolated-margin), FundingRateSim (8h accrual), perp.Grid, perp.DCA-Martingale, dashboard wires perp strategies | ✅ shipped |
 
 ## Development
 
