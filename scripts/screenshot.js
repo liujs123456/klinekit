@@ -18,21 +18,21 @@ const OUT = "docs/dashboard.png";
 
 const RUNS = [
   {
-    label: "spot.dca",
+    label: "spot.dca (PHASED)",
     body: {
       strategy: "dca", symbol: "BTC-USDT",
-      initialCash: "10000", feeBps: "10", slippageBps: "5",
-      params: { usdPerBuy: "100", intervalDays: "7" },
-      source: { provider: "okx", symbol: "BTC-USDT", bar: "1D", count: 365 },
+      initialCash: "0", feeBps: "10", slippageBps: "5",
+      params: { cashMode: "PHASED", phasedBudget: "10000", intervalDays: "1" },
+      source: { provider: "okx", symbol: "BTC-USDT", bar: "1D", count: 1000 },
     },
   },
   {
     label: "spot.dip-ladder",
     body: {
       strategy: "dip-ladder", symbol: "BTC-USDT",
-      initialCash: "10000", feeBps: "10", slippageBps: "5",
+      initialCash: "0", feeBps: "10", slippageBps: "5",
       params: { refLookbackDays: "30" },
-      source: { provider: "okx", symbol: "BTC-USDT", bar: "1D", count: 365 },
+      source: { provider: "okx", symbol: "BTC-USDT", bar: "1D", count: 1000 },
     },
   },
   {

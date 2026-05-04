@@ -63,4 +63,9 @@ public class BacktestController {
     public List<EquityPointDto> equityCurve(@PathVariable UUID id) {
         return service.findEquityCurve(id);
     }
+
+    @GetMapping("/runs/{id}/buy-hold-curve")
+    public List<EquityPointDto> buyHoldCurve(@PathVariable UUID id) {
+        return service.findBuyHoldCurve(id);
+    }
 }

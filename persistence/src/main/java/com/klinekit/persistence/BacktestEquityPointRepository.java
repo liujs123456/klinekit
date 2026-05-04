@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface BacktestEquityPointRepository extends JpaRepository<BacktestEquityPointEntity, Long> {
 
     List<BacktestEquityPointEntity> findByRunIdOrderBySeqAsc(UUID runId);
+
+    List<BacktestEquityPointEntity> findByRunIdAndKindOrderBySeqAsc(UUID runId, String kind);
 }

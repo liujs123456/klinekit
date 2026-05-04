@@ -32,7 +32,8 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
   // spot.dca
   const [usdPerBuy, setUsdPerBuy] = useState("100");
   const [intervalDays, setIntervalDays] = useState("7");
-  const [autoInject, setAutoInject] = useState(true);
+  const [cashMode, setCashMode] = useState<"AUTO_INJECT" | "PHASED" | "LUMP">("AUTO_INJECT");
+  const [phasedBudget, setPhasedBudget] = useState("10000");
   // spot.dip-ladder
   const [refLookback, setRefLookback] = useState("30");
   // perp.grid
@@ -74,7 +75,18 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
   function buildParams(): Record<string, string | number | boolean> {
     switch (strategy) {
       case "dca":
-        return { usdPerBuy, intervalDays: Number(intervalDays), autoInject };
+        if (cashMode === "PHASED") {
+          return {
+            cashMode,
+            phasedBudget,
+            intervalDays: Number(intervalDays),
+          };
+        }
+        return {
+          cashMode,
+          usdPerBuy,
+          intervalDays: Number(intervalDays),
+        };
       case "dip-ladder":
         return { refLookbackDays: Number(refLookback) };
       case "perp.grid":
@@ -195,35 +207,36 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
 
       {strategy === "dca" && (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="USD per buy" value={usdPerBuy} onChange={setUsdPerBuy} />
-            <Field label="Interval (days)" value={intervalDays} onChange={setIntervalDays} />
-          </div>
           <div>
             <label className="block text-xs text-zinc-500 mb-1">Cash mode</label>
-            <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-900 rounded-md border border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setAutoInject(true)}
-                className={`text-xs py-1.5 rounded transition ${autoInject ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
-                title="Realistic DCA: deposits USD per buy from outside on each schedule (paycheck-style). Initial cash ignored."
-              >
-                Auto-inject
-              </button>
-              <button
-                type="button"
-                onClick={() => setAutoInject(false)}
-                className={`text-xs py-1.5 rounded transition ${!autoInject ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
-                title="Drain a fixed initial-cash pool until empty."
-              >
-                Drain initial cash
-              </button>
+            <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-900 rounded-md border border-zinc-800">
+              <ModeButton active={cashMode === "AUTO_INJECT"} onClick={() => setCashMode("AUTO_INJECT")}
+                title="Recurring deposit DCA: each interval injects $X from outside (paycheck → buy BTC). Initial cash ignored.">
+                Recurring
+              </ModeButton>
+              <ModeButton active={cashMode === "PHASED"} onClick={() => setCashMode("PHASED")}
+                title="Phased entry: a fixed budget spread evenly across the entire backtest window. $/buy auto-computed.">
+                Phased
+              </ModeButton>
+              <ModeButton active={cashMode === "LUMP"} onClick={() => setCashMode("LUMP")}
+                title="Lump-sum-then-stop: spends down a fixed initial-cash pool $X per interval until empty.">
+                Lump
+              </ModeButton>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
-              {autoInject
-                ? "Each buy interval injects fresh USD — models real-world DCA where you deposit from your salary."
-                : "Spends down the initial cash you set above; stops when the pool empties."}
+              {cashMode === "AUTO_INJECT" && "Each interval injects fresh USD — realistic DCA from your salary."}
+              {cashMode === "PHASED" && "$/buy auto = budget / # of intervals. Spreads the same total over the entire window."}
+              {cashMode === "LUMP" && "Spends initial cash $X/buy until the pool empties; then holds. Mostly for what-if analysis."}
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {cashMode === "PHASED" ? (
+              <Field label="Total budget $" value={phasedBudget} onChange={setPhasedBudget} />
+            ) : (
+              <Field label="USD per buy" value={usdPerBuy} onChange={setUsdPerBuy} />
+            )}
+            <Field label="Interval (days)" value={intervalDays} onChange={setIntervalDays} />
           </div>
         </>
       )}
@@ -297,6 +310,21 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
         {busy ? "Running..." : sourceMode === "okx" ? `Fetch ${okxCount} ${okxBar} bars + run` : "Run backtest"}
       </button>
     </div>
+  );
+}
+
+function ModeButton({
+  active, onClick, title, children,
+}: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`text-xs py-1.5 rounded transition ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+    >
+      {children}
+    </button>
   );
 }
 

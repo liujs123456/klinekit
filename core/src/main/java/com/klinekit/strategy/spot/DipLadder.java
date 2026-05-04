@@ -31,6 +31,7 @@ public final class DipLadder implements Strategy {
     private final String symbol;
     private final List<Tier> tiers;
     private final int refLookbackDays;
+    private final boolean autoInject;
     private final Map<String, Boolean> armed = new HashMap<>();
     private final Deque<Candle> window = new ArrayDeque<>();
 
@@ -39,11 +40,16 @@ public final class DipLadder implements Strategy {
     }
 
     public DipLadder(String symbol, List<Tier> tiers, int refLookbackDays) {
+        this(symbol, tiers, refLookbackDays, true);
+    }
+
+    public DipLadder(String symbol, List<Tier> tiers, int refLookbackDays, boolean autoInject) {
         if (tiers.isEmpty()) throw new IllegalArgumentException("tiers cannot be empty");
         if (refLookbackDays <= 0) throw new IllegalArgumentException("refLookbackDays must be positive");
         this.symbol = symbol;
         this.tiers = List.copyOf(tiers);
         this.refLookbackDays = refLookbackDays;
+        this.autoInject = autoInject;
         for (Tier t : tiers) armed.put(t.name(), true);
     }
 
@@ -57,6 +63,7 @@ public final class DipLadder implements Strategy {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("symbol", symbol);
         m.put("refLookbackDays", refLookbackDays);
+        m.put("autoInject", autoInject);
         m.put("tiers", tiers.stream().map(t ->
                 Map.of("name", t.name(),
                         "triggerFactor", t.triggerFactor().toPlainString(),
@@ -90,6 +97,7 @@ public final class DipLadder implements Strategy {
             Tier t = tiers.get(i);
             BigDecimal triggerPx = ref.multiply(t.triggerFactor());
             if (price.compareTo(triggerPx) <= 0 && armed.getOrDefault(t.name(), true)) {
+                if (autoInject) ctx.portfolio().injectCash(t.usd());
                 if (!ctx.portfolio().hasCash(t.usd())) return;
                 BigDecimal qty = t.usd().divide(price, MC);
                 ctx.router().submit(Order.marketBuy(symbol, qty, c.timestamp()));

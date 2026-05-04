@@ -14,8 +14,18 @@ public record BacktestResult(
         BigDecimal finalEquity,
         List<Trade> trades,
         List<EquityPoint> equityCurve,
+        List<EquityPoint> buyHoldCurve,
         Map<String, BigDecimal> metrics
 ) {
+    public BacktestResult(
+            String strategy, String symbol, Instant start, Instant end,
+            BigDecimal initialCash, BigDecimal finalEquity,
+            List<Trade> trades, List<EquityPoint> equityCurve,
+            Map<String, BigDecimal> metrics) {
+        this(strategy, symbol, start, end, initialCash, finalEquity,
+                trades, equityCurve, List.of(), metrics);
+    }
+
     public BigDecimal totalReturn() {
         return finalEquity.subtract(initialCash);
     }

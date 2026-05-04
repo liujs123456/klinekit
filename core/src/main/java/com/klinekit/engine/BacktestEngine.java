@@ -9,6 +9,7 @@ import com.klinekit.domain.Trade;
 import com.klinekit.metrics.Metrics;
 import com.klinekit.strategy.Strategy;
 import com.klinekit.strategy.StrategyContext;
+import com.klinekit.strategy.spot.Dca;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -62,8 +63,12 @@ public final class BacktestEngine {
         FundingRateSim funding = new FundingRateSim(config.fundingRatePer8h(), config.fundingRateHistory());
 
         Candle first = candles.getFirst();
+        Candle last = candles.getLast();
         router.onCandle(first);
         funding.onCandle(first);
+        if (strategy instanceof Dca dca) {
+            dca.primeRange(first.timestamp(), last.timestamp());
+        }
         strategy.onStart(new StrategyContext(first, portfolio, router));
 
         List<EquityPoint> curve = new ArrayList<>(candles.size());
@@ -99,7 +104,6 @@ public final class BacktestEngine {
             end = c.timestamp();
         }
 
-        Candle last = candles.getLast();
         router.onCandle(last);
         strategy.onFinish(new StrategyContext(last, portfolio, router));
 
@@ -114,6 +118,22 @@ public final class BacktestEngine {
         metrics.put("totalInvested", totalInvested);
         metrics.put("holdingsValue", holdingsValue);
         metrics.put("totalInjected", totalInjected);
+
+        // Buy-and-hold baseline: same dollar exposure deployed once at the
+        // first candle's close. We pin the size to whichever capital concept
+        // the strategy is actually using (injected for DCA-style, otherwise
+        // initial cash) so the baseline is comparable on equity-dollar scale.
+        BigDecimal bhCapital = totalInjected.signum() > 0 ? totalInjected : config.initialCash();
+        List<EquityPoint> buyHoldCurve = computeBuyHoldCurve(candles, bhCapital);
+        if (!buyHoldCurve.isEmpty() && bhCapital.signum() > 0) {
+            BigDecimal bhFinal = buyHoldCurve.getLast().equity();
+            BigDecimal bhPct = bhFinal.subtract(bhCapital)
+                    .divide(bhCapital, MathContext.DECIMAL64)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(4, RoundingMode.HALF_UP);
+            metrics.put("buyHoldFinalEquity", bhFinal);
+            metrics.put("buyHoldReturnPct", bhPct);
+        }
 
         // True ROI on capital actually deployed. Prefer injected (DCA realism)
         // when the strategy used auto-inject; otherwise use sum-of-buys.
@@ -139,8 +159,21 @@ public final class BacktestEngine {
                 finalEquity,
                 router.trades(),
                 List.copyOf(curve),
+                buyHoldCurve,
                 Map.copyOf(metrics)
         );
+    }
+
+    private static List<EquityPoint> computeBuyHoldCurve(List<Candle> candles, BigDecimal capital) {
+        if (candles.isEmpty() || capital == null || capital.signum() <= 0) return List.of();
+        BigDecimal entryPrice = candles.getFirst().close();
+        if (entryPrice.signum() <= 0) return List.of();
+        BigDecimal qty = capital.divide(entryPrice, MathContext.DECIMAL64);
+        List<EquityPoint> out = new ArrayList<>(candles.size());
+        for (Candle c : candles) {
+            out.add(new EquityPoint(c.timestamp(), qty.multiply(c.close())));
+        }
+        return out;
     }
 
     private static BigDecimal computeTotalInvested(List<Trade> trades) {

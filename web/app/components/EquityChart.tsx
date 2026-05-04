@@ -21,12 +21,22 @@ type Series = {
   liquidations?: { timestamp: string; equity: number }[];
 };
 
-type Props = {
-  series: Series[];
+type Baseline = {
+  id: string;
+  label: string;
+  points: EquityPoint[];
 };
 
-export function EquityChart({ series }: Props) {
-  const merged = mergeSeries(series);
+type Props = {
+  series: Series[];
+  baseline?: Baseline;
+};
+
+export function EquityChart({ series, baseline }: Props) {
+  const allSeries = baseline && baseline.points.length > 0
+      ? [...series, { id: baseline.id, label: baseline.label, color: "#52525b", points: baseline.points } as Series]
+      : series;
+  const merged = mergeSeries(allSeries);
   if (!merged.length) {
     return (
       <div className="h-[360px] flex items-center justify-center text-zinc-500">
@@ -58,6 +68,18 @@ export function EquityChart({ series }: Props) {
             formatter={(v) => "$" + Number(v).toFixed(2)}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
+          {baseline && baseline.points.length > 0 && (
+            <Line
+              type="monotone"
+              dataKey={baseline.id}
+              name={baseline.label}
+              stroke="#52525b"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
           {series.map((s) => (
             <Line
               key={s.id}

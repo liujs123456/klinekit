@@ -43,7 +43,7 @@ export type RunSummary = {
   equityPointCount: number;
 };
 
-export type EquityPoint = { seq: number; timestamp: string; equity: string };
+export type EquityPoint = { seq: number; timestamp: string; equity: string; kind?: string };
 
 export type Trade = {
   seq: number;
@@ -87,6 +87,8 @@ export const api = {
   getRun: (id: string) => jfetch<RunSummary>(`/runs/${id}`),
 
   getEquityCurve: (id: string) => jfetch<EquityPoint[]>(`/runs/${id}/equity-curve`),
+
+  getBuyHoldCurve: (id: string) => jfetch<EquityPoint[]>(`/runs/${id}/buy-hold-curve`),
 
   getTrades: (id: string) => jfetch<Trade[]>(`/runs/${id}/trades`),
 };

@@ -5,12 +5,14 @@ Java backtest engine for crypto trading strategies — spot DCA, dip-ladder, per
 ![klinekit dashboard with three overlaid backtest equity curves](docs/dashboard.png)
 
 > **Status:** **M1 + M2 + M3 + dashboard + OKX live data + risk controls + Dockerized stack shipped.**
-> Core engine (spot + perp), 4 strategies, CLI with `fetch` / `backtest`,
-> Spring Boot REST API + Postgres persistence with Flyway, OpenAPI docs,
-> Next.js dashboard with strategy parameter forms and equity-curve overlay
-> (with liquidation markers), OKX history candles + funding rates, parallel
-> batch backtests on Java 21 virtual threads, full Docker stack, cross-project
-> hook into crypto-dca-monitor's morning + weekly ntfy pushes. 48 tests across modules.
+> Core engine (spot + perp), 4 strategies (each with realistic cash-flow modes),
+> auto-overlaid buy-and-hold baseline on every backtest, CLI with
+> `fetch` / `backtest`, Spring Boot REST API + Postgres persistence with Flyway,
+> OpenAPI docs, Next.js dashboard with strategy parameter forms and equity-curve
+> overlay (with liquidation markers), OKX history candles + funding rates,
+> parallel batch backtests on Java 21 virtual threads, full Docker stack,
+> cross-project hook into crypto-dca-monitor's morning + weekly ntfy pushes.
+> 50 tests across modules.
 
 ## Why
 
@@ -18,21 +20,55 @@ Java backtest engine for crypto trading strategies — spot DCA, dip-ladder, per
 - The core ships as a **standalone Spring-free jar** so it can be embedded in scripts, services, or notebooks. The (forthcoming) REST API is a thin layer on top.
 - Designed in idiomatic **Java 21** — records, sealed types, switch expressions, pattern matching. No Lombok in core.
 
-## Headline result — does the dip-ladder actually beat DCA?
+## Strategies
 
-The included [`spot.dip-ladder`](core/src/main/java/com/klinekit/strategy/spot/DipLadder.java) is a port of the live tier-ladder strategy from [`crypto-dca-monitor`](../btc-dca/crypto-dca-monitor) — buys $100/$200/$400/$800 at -10/-15/-22/-32% from a 30-day rolling high, with a 5% rebound re-arm.
+klinekit ships four strategies. Every backtest auto-overlays a **buy-and-hold
+baseline** (dashed grey on the chart) so you immediately see whether the
+strategy actually beat "do nothing".
 
-Backtest over **2025-05 → 2026-05** (BTC: \$95,922 → \$78,717, **buy-hold -17.9%**), $10,000 initial cash:
+### `spot.dca` — Dollar-Cost Averaging
 
-| Strategy | Final equity | Total return | Max drawdown | Trades |
+Buys `usdPerBuy` worth of `symbol` every `intervalDays` days. Three cash modes
+control where the money comes from:
+
+| Mode | What it models | When to use it |
+|---|---|---|
+| **`AUTO_INJECT`** *(default)* | Recurring deposit. Each interval, `usdPerBuy` is injected from outside the account ("paycheck → buy BTC"). Initial cash is irrelevant. | The realistic, ongoing-income DCA case. **Use this by default.** |
+| **`PHASED`** | A finite total budget spread evenly across the entire backtest window. `usdPerBuy` is auto-derived as `phasedBudget / numberOfIntervals`. | "I have $10k today; if I had drip-fed it over the last 3 years, what would have happened?" |
+| **`LUMP`** | Spends down a fixed `initialCash` pool by `usdPerBuy` each interval, then stops and holds. | What-if analysis: "what if I had stopped DCAing after 2 months?" Mostly a teaching tool. |
+
+For DCA the dashboard reports **ROI on invested capital** (`(finalEquity − totalInjected) / totalInjected`) instead of `(finalEquity − initialCash) / initialCash`, because that's what actually answers "did this DCA earn me money."
+
+### `spot.dip-ladder` — Tier-based dip buying
+
+Port of the live strategy used in [`crypto-dca-monitor`](https://github.com/liujs123456/crypto-dca-monitor). Buys $100/$200/$400/$800 at -10/-15/-22/-32% from a rolling 30-day high. Each tier fires once and re-arms only after a 5% rebound from its trigger. Auto-inject defaults to ON, so deeper tiers always fire when triggered regardless of starting balance.
+
+### `perp.grid` — Bidirectional grid on a perpetual swap
+
+Sets up evenly-spaced price levels between `lowerBound` and `upperBound`. On each downward level cross, opens a leveraged long; on each upward level cross above the running average entry, takes profit on a slice. Auto-inject covers margin so the entire grid can fire even when the account starts empty.
+
+### `perp.dca-martingale` — OKX 合约马丁
+
+Opens a leveraged position, doubles down by `multiplier` each time price moves against you by `pullbackPct`, closes the whole position when price recovers by `takeProfitPct` above the running average entry. Two optional risk controls (off by default, **strongly recommended on**):
+
+- **`stopLossPct`** — close the position when uPnL drops to `-stopLossPct × posted margin`. A 50% setting on 5x leverage triggers at ~10% adverse price move on the initial entry.
+- **`trailingStopPct`** — once profitable, lock in the running peak; close if mark price retraces from peak by this fraction.
+
+`perp.dca-martingale` does **not** use auto-inject — perp accounts are real margin pools, so the strategy is bounded by `maxOrders × 2^(maxOrders-1) × baseQty` worth of margin. If the pool isn't big enough it stops adding. This is intentional.
+
+## Headline result — what does the data actually show?
+
+**1000 days of BTC-USDT (≈2023-08 → 2026-05; BTC went from $29k → $78k)**, $10,000 deployed each way:
+
+| Strategy | Final equity | ROI on invested | Max drawdown | Trades |
 |---|---:|---:|---:|---:|
-| Buy & hold | \$8,206 | **-17.94%** | n/a | 1 |
-| `spot.dca` (weekly $200) | \$8,397 | -16.03% | 35.04% | 49 |
-| **`spot.dip-ladder`** | **\$10,016** | **+0.16%** | **6.51%** | **11** |
+| **Buy & hold** | **$26,634** | **+166%** | high | 1 |
+| `spot.dca` PHASED ($10/day × 1000) | $12,340 | +23% | 43% | 998 |
+| `spot.dip-ladder` (default tiers) | varies — wins in drawdowns, loses in trend | varies | low | varies |
 
-The dip-ladder preserved capital in a -18% year by sitting out non-dip days and only firing on real drawdowns. DCA's flat cadence forced it to keep buying through a downtrend.
+**The lesson:** in a strong uptrend, no DCA-flavoured strategy beats buy-and-hold — they sacrifice upside for timing-risk reduction. The dashboard now overlays the buy-hold curve on every chart so you can see this trade-off directly.
 
-(Numbers are reproducible with `sample-data/btc-1y-daily.csv` and the commands in the [Quick start](#quick-start) below.)
+For the opposite regime (one-year BTC drawdown 2025-05 → 2026-05, BTC -17.9%), the same dip-ladder turned **+0.16%** with a 6.5% max drawdown vs DCA's -16% / 35% drawdown — the moment DCA-style strategies actually shine. Reproducible from `sample-data/btc-1y-daily.csv`.
 
 ## Quick start
 

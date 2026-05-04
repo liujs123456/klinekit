@@ -111,7 +111,8 @@ public class BacktestService {
         }
         tradeRepo.saveAll(tradeEntities);
 
-        List<BacktestEquityPointEntity> eqEntities = new ArrayList<>(result.equityCurve().size());
+        List<BacktestEquityPointEntity> eqEntities = new ArrayList<>(
+                result.equityCurve().size() + result.buyHoldCurve().size());
         for (int i = 0; i < result.equityCurve().size(); i++) {
             var p = result.equityCurve().get(i);
             BacktestEquityPointEntity e = new BacktestEquityPointEntity();
@@ -119,6 +120,17 @@ public class BacktestService {
             e.setSeq(i);
             e.setTs(p.timestamp());
             e.setEquity(p.equity());
+            e.setKind("STRATEGY");
+            eqEntities.add(e);
+        }
+        for (int i = 0; i < result.buyHoldCurve().size(); i++) {
+            var p = result.buyHoldCurve().get(i);
+            BacktestEquityPointEntity e = new BacktestEquityPointEntity();
+            e.setRunId(saved.getId());
+            e.setSeq(i);
+            e.setTs(p.timestamp());
+            e.setEquity(p.equity());
+            e.setKind("BUY_HOLD");
             eqEntities.add(e);
         }
         equityRepo.saveAll(eqEntities);
@@ -179,8 +191,15 @@ public class BacktestService {
 
     @Transactional(readOnly = true)
     public List<EquityPointDto> findEquityCurve(UUID id) {
-        return equityRepo.findByRunIdOrderBySeqAsc(id).stream()
-                .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity()))
+        return equityRepo.findByRunIdAndKindOrderBySeqAsc(id, "STRATEGY").stream()
+                .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity(), p.getKind()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<EquityPointDto> findBuyHoldCurve(UUID id) {
+        return equityRepo.findByRunIdAndKindOrderBySeqAsc(id, "BUY_HOLD").stream()
+                .map(p -> new EquityPointDto(p.getSeq(), p.getTs(), p.getEquity(), p.getKind()))
                 .toList();
     }
 

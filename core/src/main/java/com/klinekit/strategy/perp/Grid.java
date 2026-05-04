@@ -35,6 +35,7 @@ public final class Grid implements Strategy {
     private final int levels;
     private final BigDecimal leverage;
     private final BigDecimal qtyPerLevel;
+    private final boolean autoInject;
 
     private BigDecimal[] gridPrices;
     private boolean[] longActive;
@@ -42,6 +43,11 @@ public final class Grid implements Strategy {
 
     public Grid(String symbol, BigDecimal lowerBound, BigDecimal upperBound, int levels,
                  BigDecimal leverage, BigDecimal qtyPerLevel) {
+        this(symbol, lowerBound, upperBound, levels, leverage, qtyPerLevel, true);
+    }
+
+    public Grid(String symbol, BigDecimal lowerBound, BigDecimal upperBound, int levels,
+                 BigDecimal leverage, BigDecimal qtyPerLevel, boolean autoInject) {
         if (lowerBound.compareTo(upperBound) >= 0) {
             throw new IllegalArgumentException("lowerBound must be < upperBound");
         }
@@ -55,6 +61,7 @@ public final class Grid implements Strategy {
         this.levels = levels;
         this.leverage = leverage;
         this.qtyPerLevel = qtyPerLevel;
+        this.autoInject = autoInject;
     }
 
     @Override
@@ -69,6 +76,7 @@ public final class Grid implements Strategy {
         m.put("levels", levels);
         m.put("leverage", leverage.toPlainString());
         m.put("qtyPerLevel", qtyPerLevel.toPlainString());
+        m.put("autoInject", autoInject);
         return Map.copyOf(m);
     }
 
@@ -97,6 +105,7 @@ public final class Grid implements Strategy {
             boolean crossedDown = lastPrice.compareTo(level) > 0 && cur.compareTo(level) <= 0;
             if (crossedDown && !longActive[i]) {
                 BigDecimal margin = cur.multiply(qtyPerLevel).divide(leverage, MC);
+                if (autoInject) ctx.portfolio().injectCash(margin);
                 if (!ctx.portfolio().hasCash(margin)) continue;
                 ctx.router().submit(Order.openPerp(symbol, Direction.LONG, qtyPerLevel, leverage, c.timestamp()));
                 longActive[i] = true;

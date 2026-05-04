@@ -11,6 +11,7 @@ const COLORS = ["#34d399", "#60a5fa", "#f472b6", "#facc15", "#a78bfa"];
 type RunWithCurve = {
   run: RunSummary;
   curve: EquityPoint[];
+  buyHoldCurve: EquityPoint[];
   trades: Trade[];
   color: string;
 };
@@ -31,13 +32,14 @@ export default function Home() {
     setError(null);
     try {
       const summary = await api.runBacktest(req);
-      const [curve, trades] = await Promise.all([
+      const [curve, buyHoldCurve, trades] = await Promise.all([
         api.getEquityCurve(summary.id),
+        api.getBuyHoldCurve(summary.id),
         api.getTrades(summary.id),
       ]);
       setResults((rs) => [
         ...rs,
-        { run: summary, curve, trades, color: COLORS[rs.length % COLORS.length] },
+        { run: summary, curve, buyHoldCurve, trades, color: COLORS[rs.length % COLORS.length] },
       ]);
       const refreshed = await api.listRuns();
       setRecent(refreshed);
@@ -57,14 +59,18 @@ export default function Home() {
   }
 
   const buyHoldPct = useMemo(() => {
-    if (results.length === 0) {
-      if (!candles || candles.length < 2) return null;
-      const first = candles[0].close;
-      const last = candles[candles.length - 1].close;
-      if (!first) return null;
-      return ((last - first) / first) * 100;
+    // Pull from any run's metrics — they all share the candle window's BH return
+    for (const r of results) {
+      const v = r.run.metrics?.buyHoldReturnPct;
+      if (v !== undefined && v !== null && Number.isFinite(Number(v))) {
+        return Number(v);
+      }
     }
-    return null;
+    if (!candles || candles.length < 2) return null;
+    const first = candles[0].close;
+    const last = candles[candles.length - 1].close;
+    if (!first) return null;
+    return ((last - first) / first) * 100;
   }, [candles, results]);
 
   function clearResults() {
@@ -146,6 +152,15 @@ export default function Home() {
                 points: r.curve,
                 liquidations: liquidationDots(r.curve, r.trades),
               }))}
+              baseline={
+                results.length > 0
+                  ? {
+                      id: "buy-hold",
+                      label: "buy & hold (baseline)",
+                      points: results[0].buyHoldCurve,
+                    }
+                  : undefined
+              }
             />
             {results.some((r) => r.trades.some((t) => t.orderId.startsWith("LIQ-"))) && (
               <p className="mt-2 text-xs text-rose-400/80">

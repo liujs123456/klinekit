@@ -31,7 +31,13 @@ public class BacktestEquityPointEntity {
     @Column(nullable = false)
     private BigDecimal equity;
 
+    @Column(nullable = false, length = 16)
+    private String kind = "STRATEGY";
+
     public BacktestEquityPointEntity() {}
+
+    public String getKind() { return kind; }
+    public void setKind(String kind) { this.kind = kind; }
 
     public Long getId() { return id; }
     public UUID getRunId() { return runId; }
