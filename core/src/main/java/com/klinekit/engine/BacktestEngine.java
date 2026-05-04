@@ -4,13 +4,18 @@ import com.klinekit.domain.BacktestResult;
 import com.klinekit.domain.Candle;
 import com.klinekit.domain.EquityPoint;
 import com.klinekit.domain.Position;
+import com.klinekit.domain.Side;
+import com.klinekit.domain.Trade;
 import com.klinekit.metrics.Metrics;
 import com.klinekit.strategy.Strategy;
 import com.klinekit.strategy.StrategyContext;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -99,8 +104,31 @@ public final class BacktestEngine {
         strategy.onFinish(new StrategyContext(last, portfolio, router));
 
         BigDecimal finalEquity = portfolio.equity(last.symbol(), last.close());
-        Map<String, BigDecimal> metrics = Metrics.compute(curve, router.trades(), config.initialCash())
-                .asMap();
+
+        Map<String, BigDecimal> base = Metrics.compute(curve, router.trades(), config.initialCash()).asMap();
+        Map<String, BigDecimal> metrics = new LinkedHashMap<>(base);
+
+        BigDecimal totalInvested = computeTotalInvested(router.trades());
+        BigDecimal holdingsValue = portfolio.position(symbol).marketValue(last.close());
+        BigDecimal totalInjected = portfolio.totalInjected();
+        metrics.put("totalInvested", totalInvested);
+        metrics.put("holdingsValue", holdingsValue);
+        metrics.put("totalInjected", totalInjected);
+
+        // True ROI on capital actually deployed. Prefer injected (DCA realism)
+        // when the strategy used auto-inject; otherwise use sum-of-buys.
+        BigDecimal denom = totalInjected.signum() > 0 ? totalInjected : totalInvested;
+        if (denom.signum() > 0) {
+            BigDecimal numerator = totalInjected.signum() > 0
+                    ? finalEquity.subtract(totalInjected)
+                    : holdingsValue.subtract(totalInvested);
+            metrics.put("roiOnInvestedPct",
+                    numerator.divide(denom, MathContext.DECIMAL64)
+                            .multiply(BigDecimal.valueOf(100))
+                            .setScale(4, RoundingMode.HALF_UP));
+        } else {
+            metrics.put("roiOnInvestedPct", BigDecimal.ZERO);
+        }
 
         return new BacktestResult(
                 strategy.name(),
@@ -111,7 +139,17 @@ public final class BacktestEngine {
                 finalEquity,
                 router.trades(),
                 List.copyOf(curve),
-                metrics
+                Map.copyOf(metrics)
         );
+    }
+
+    private static BigDecimal computeTotalInvested(List<Trade> trades) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Trade t : trades) {
+            if (t.orderId() != null && t.orderId().startsWith("LIQ-")) continue;
+            BigDecimal n = t.notional();
+            total = t.side() == Side.BUY ? total.add(n) : total.subtract(n);
+        }
+        return total.signum() < 0 ? BigDecimal.ZERO : total;
     }
 }

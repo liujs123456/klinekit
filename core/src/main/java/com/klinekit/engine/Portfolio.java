@@ -17,6 +17,7 @@ public final class Portfolio {
     private static final MathContext MC = MathContext.DECIMAL64;
 
     private BigDecimal cash;
+    private BigDecimal totalInjected = BigDecimal.ZERO;
     private final Map<String, Position> positions = new HashMap<>();
 
     public Portfolio(BigDecimal initialCash) {
@@ -25,6 +26,22 @@ public final class Portfolio {
 
     public BigDecimal cash() {
         return cash;
+    }
+
+    /**
+     * Top up the portfolio with external cash (e.g. a recurring DCA injection
+     * from the user's salary). Tracked separately from initial cash so the
+     * engine can report total deployed capital regardless of whether it came
+     * from a one-time deposit or N recurring contributions.
+     */
+    public void injectCash(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) return;
+        cash = cash.add(amount);
+        totalInjected = totalInjected.add(amount);
+    }
+
+    public BigDecimal totalInjected() {
+        return totalInjected;
     }
 
     public Position position(String symbol) {

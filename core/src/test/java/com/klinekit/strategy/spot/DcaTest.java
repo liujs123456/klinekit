@@ -31,15 +31,31 @@ class DcaTest {
     }
 
     @Test
-    void zeroFeeFlatPriceProducesZeroPnl() {
+    void zeroFeeFlatPriceDrainModeReturnsZero() {
+        // autoInject=false (drain mode): bought @ 100, market still @ 100
+        // → equity should equal initial cash exactly.
         List<Candle> candles = flatCandles("BTC", 30, new BigDecimal("100"));
-        Dca strat = new Dca("BTC", new BigDecimal("100"), 7);
+        Dca strat = new Dca("BTC", new BigDecimal("100"), 7, false);
         BacktestResult r = new BacktestEngine(
                 new BacktestEngine.Config(new BigDecimal("10000"),
                         BigDecimal.ZERO, BigDecimal.ZERO)).run(strat, candles);
-
-        // bought @ 100, market still @ 100 -> equity should equal initial cash
         assertThat(r.finalEquity()).isEqualByComparingTo("10000");
+    }
+
+    @Test
+    void autoInjectModeAccumulatesInvestedCapital() {
+        // 30 days, $30/day, 7-day interval → 5 buys at $30 = $150 invested.
+        // With autoInject the portfolio's totalInjected matches.
+        List<Candle> candles = flatCandles("BTC", 30, new BigDecimal("100"));
+        Dca strat = new Dca("BTC", new BigDecimal("30"), 7);  // autoInject=true (default)
+        BacktestResult r = new BacktestEngine(
+                new BacktestEngine.Config(new BigDecimal("0"),
+                        BigDecimal.ZERO, BigDecimal.ZERO)).run(strat, candles);
+        assertThat(r.trades()).hasSize(5);
+        assertThat(r.metrics().get("totalInjected")).isEqualByComparingTo("150");
+        assertThat(r.metrics().get("totalInvested")).isEqualByComparingTo("150");
+        // Flat-price → ROI on invested ≈ 0
+        assertThat(r.metrics().get("roiOnInvestedPct")).isEqualByComparingTo("0");
     }
 
     @Test
@@ -61,15 +77,28 @@ class DcaTest {
     }
 
     @Test
-    void stopsBuyingWhenCashExhausted() {
+    void drainModeStopsBuyingWhenCashExhausted() {
+        // autoInject=false: $500/day for a year against a $10k starting balance →
+        // 10000 / 500 = exactly 20 trades, then cash exhausted.
         List<Candle> candles = flatCandles("BTC", 365, new BigDecimal("100"));
-        Dca strat = new Dca("BTC", new BigDecimal("500"), 1); // $500/day for a year > $10k
+        Dca strat = new Dca("BTC", new BigDecimal("500"), 1, false);
         BacktestResult r = new BacktestEngine(
                 new BacktestEngine.Config(new BigDecimal("10000"),
                         BigDecimal.ZERO, BigDecimal.ZERO)).run(strat, candles);
-
-        // 10000 / 500 = exactly 20 trades, then cash exhausted
         assertThat(r.trades()).hasSize(20);
+    }
+
+    @Test
+    void autoInjectKeepsBuyingPastZeroInitialCash() {
+        // autoInject=true: starts with $0, deposits $500/day for 365 days
+        // → 365 trades, totalInjected = $182,500.
+        List<Candle> candles = flatCandles("BTC", 365, new BigDecimal("100"));
+        Dca strat = new Dca("BTC", new BigDecimal("500"), 1, true);
+        BacktestResult r = new BacktestEngine(
+                new BacktestEngine.Config(BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO)).run(strat, candles);
+        assertThat(r.trades()).hasSize(365);
+        assertThat(r.metrics().get("totalInjected")).isEqualByComparingTo("182500");
     }
 
     private static List<Candle> flatCandles(String symbol, int days, BigDecimal price) {

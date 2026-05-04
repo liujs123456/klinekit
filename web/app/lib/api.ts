@@ -23,7 +23,7 @@ export type BacktestRequest = {
   initialCash: string;
   feeBps: string;
   slippageBps: string;
-  params: Record<string, string | number>;
+  params: Record<string, string | number | boolean>;
   candles?: CandleInput[];
   source?: DataSourceSpec;
 };

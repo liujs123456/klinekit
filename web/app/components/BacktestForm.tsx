@@ -32,6 +32,7 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
   // spot.dca
   const [usdPerBuy, setUsdPerBuy] = useState("100");
   const [intervalDays, setIntervalDays] = useState("7");
+  const [autoInject, setAutoInject] = useState(true);
   // spot.dip-ladder
   const [refLookback, setRefLookback] = useState("30");
   // perp.grid
@@ -70,10 +71,10 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
     }
   }
 
-  function buildParams(): Record<string, string | number> {
+  function buildParams(): Record<string, string | number | boolean> {
     switch (strategy) {
       case "dca":
-        return { usdPerBuy, intervalDays: Number(intervalDays) };
+        return { usdPerBuy, intervalDays: Number(intervalDays), autoInject };
       case "dip-ladder":
         return { refLookbackDays: Number(refLookback) };
       case "perp.grid":
@@ -193,10 +194,38 @@ export function BacktestForm({ candles, onCandles, onSubmit, busy }: Props) {
       </div>
 
       {strategy === "dca" && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="USD per buy" value={usdPerBuy} onChange={setUsdPerBuy} />
-          <Field label="Interval (days)" value={intervalDays} onChange={setIntervalDays} />
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="USD per buy" value={usdPerBuy} onChange={setUsdPerBuy} />
+            <Field label="Interval (days)" value={intervalDays} onChange={setIntervalDays} />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">Cash mode</label>
+            <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-900 rounded-md border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setAutoInject(true)}
+                className={`text-xs py-1.5 rounded transition ${autoInject ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                title="Realistic DCA: deposits USD per buy from outside on each schedule (paycheck-style). Initial cash ignored."
+              >
+                Auto-inject
+              </button>
+              <button
+                type="button"
+                onClick={() => setAutoInject(false)}
+                className={`text-xs py-1.5 rounded transition ${!autoInject ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                title="Drain a fixed initial-cash pool until empty."
+              >
+                Drain initial cash
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              {autoInject
+                ? "Each buy interval injects fresh USD — models real-world DCA where you deposit from your salary."
+                : "Spends down the initial cash you set above; stops when the pool empties."}
+            </p>
+          </div>
+        </>
       )}
 
       {strategy === "dip-ladder" && (

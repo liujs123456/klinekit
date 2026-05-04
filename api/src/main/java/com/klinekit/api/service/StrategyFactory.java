@@ -21,7 +21,8 @@ public class StrategyFactory {
             case "dca", "spot.dca" -> new Dca(
                     symbol,
                     bd(p, "usdPerBuy", "100"),
-                    intOf(p, "intervalDays", 7));
+                    intOf(p, "intervalDays", 7),
+                    boolOf(p, "autoInject", true));
             case "dip-ladder", "spot.dip-ladder" -> new DipLadder(
                     symbol,
                     DipLadder.DEFAULT_TIERS,
@@ -63,5 +64,12 @@ public class StrategyFactory {
         Object v = p.get(k);
         if (v == null) return defaultValue;
         return Integer.parseInt(v.toString());
+    }
+
+    private static boolean boolOf(Map<String, Object> p, String k, boolean defaultValue) {
+        Object v = p.get(k);
+        if (v == null) return defaultValue;
+        if (v instanceof Boolean b) return b;
+        return Boolean.parseBoolean(v.toString());
     }
 }
