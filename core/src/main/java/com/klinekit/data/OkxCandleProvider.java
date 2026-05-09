@@ -76,6 +76,9 @@ public final class OkxCandleProvider implements CandleProvider {
         return List.copyOf(out);
     }
 
+    // TODO(#1): Add exponential backoff retry framework for transient errors
+    //   (5xx, 429, IOException). HTTP GET is idempotent so retries are safe.
+    //   See https://github.com/liujs123456/klinekit/issues/1
     private JsonNode fetchPage(int limit, Long beforeMs) {
         StringBuilder url = new StringBuilder(BASE_URL)
                 .append("?instId=").append(instId)
